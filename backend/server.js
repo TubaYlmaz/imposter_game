@@ -2,9 +2,9 @@ const express = require('express');
 const http = require('http');
 const Redis = require('ioredis');
 const fs = require('fs');
-const readline = require('readline'); // .txt dosyasını satır satır okumak için yerleşik modül
+const path = require('path'); // Dosya yolları için güvenli modül
 const { Server } = require('socket.io'); // Canlı bağlantılar için Socket.io
-const cors = require('cors'); // 👈 İşte o meşhur paketimiz burada!
+const cors = require('cors'); // İşte o meşhur paketimiz burada!
 
 const app = express();
 app.use(cors()); // Flutter Web ve Mobil ağ istekleri için CORS aktif
@@ -22,6 +22,24 @@ const io = new Server(server, {
 
 const redisClient = new Redis();
 
+// 📁 dictionary.json dosyamızı güvenli ve dinamik şekilde yüklüyoruz kanka
+const dictionaryPath = path.join(__dirname, '../dictionary.json');
+let dictionary = {};
+
+function kelimeleriYukle() {
+    try {
+        if (fs.existsSync(dictionaryPath)) {
+            const rawData = fs.readFileSync(dictionaryPath, 'utf8');
+            dictionary = JSON.parse(rawData);
+            console.log("2. Adım: dictionary.json başarıyla hafızaya alındı! Kategoriler:", Object.keys(dictionary).join(', '));
+        } else {
+            console.log("⚠️ Uyarı: dictionary.json dosyası bir üst klasörde bulunamadı!");
+        }
+    } catch (err) {
+        console.error("Sözlük JSON dosyası okunurken hata oluştu kanka:", err);
+    }
+}
+
 redisClient.on('connect', () => {
     console.log("1. Adım: Redis'e başarıyla bağlanıldı!");
     kelimeleriYukle();
@@ -30,40 +48,6 @@ redisClient.on('connect', () => {
 redisClient.on('error', (err) => {
     console.log('Redis Hatası:', err);
 });
-
-// Kelime havuzunu yükleyen fonksiyon
-function kelimeleriYukle() {
-    const kelimeHavuzu = [];
-
-    // '../dictionary.txt' diyerek bir üst klasördeki dosyaya erişiyoruz
-    const rl = readline.createInterface({
-        input: fs.createReadStream('../dictionary.txt'),
-        output: process.stdout,
-        terminal: false
-    });
-
-    rl.on('line', (line) => {
-        const temizKelime = line.trim();
-        if (temizKelime) kelimeHavuzu.push(temizKelime);
-    });
-
-    rl.on('close', async () => {
-        console.log(`2. Adım: dictionary.txt dosyası okundu. Toplam ${kelimeHavuzu.length} kelime bulundu.`);
-
-        // Eski kelimeleri temizle
-        await redisClient.del('kelime_havuzu');
-        if (kelimeHavuzu.length > 0) {
-            await redisClient.sadd('kelime_havuzu', kelimeHavuzu);
-            console.log("3. Adım: Tüm kelimeler başarıyla Redis'e yüklendi!");
-
-            // TEST: Rastgele kelime çekmeyi deniyoruz
-            const testKelime = await redisClient.srandmember('kelime_havuzu');
-            console.log("🎯 Redis Testi - Rastgele Seçilen Kelime:", testKelime);
-        } else {
-            console.log("⚠️ Uyarı: dictionary.txt dosyası boş veya bulunamadı!");
-        }
-    });
-}
 
 // ==========================================
 // 🚀 OYUN LOGIC VE WEBSOCKET BAĞLANTILARI
@@ -82,7 +66,6 @@ io.on('connection', (socket) => {
             players: JSON.stringify([hostName])
         };
 
-        // Redis'e oda verisini 2 saatlik ömürle (TTL) yazıyoruz
         await redisClient.hmset(`room:${roomCode}`, roomData);
         await redisClient.expire(`room:${roomCode}`, 7200);
 
@@ -115,7 +98,6 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         console.log(`🏃‍♂️ ${playerName}, ${roomCode} odasına katıldı.`);
 
-        // Odadaki HERKESE güncel oyuncu listesini fırlatıyoruz!
         io.to(roomCode).emit('room_updated', {
             roomCode,
             players: players,
@@ -132,56 +114,84 @@ io.on('connection', (socket) => {
 // 🏁 --- API ENDPOINT'LERİ ---
 // ==========================================
 
-// 🏁 1. Host'un Oyunu Başlatma İstetiği
+// 🏁 1. Host'un Oyunu Başlatma İsteği (DİNAMİK KATEGORİ VE ÇOKLU İMPOSTOR DESTEKLİ 🚀)
 app.post('/api/start-game', async (req, res) => {
     try {
-        const { roomCode, players } = req.body;
+        const { roomCode, players, gameMode, category, impostorCount } = req.body;
 
         if (!players || players.length === 0) {
             return res.status(400).json({ error: "Odadaki oyuncu listesi boş olamaz!" });
         }
 
-        const selectedWord = await redisClient.srandmember('kelime_havuzu');
-
-        if (!selectedWord) {
-            return res.status(500).json({ error: "Redis kelime havuzu boş!" });
+        // --- A. KATEGORİDEN KELİME SEÇME MANTIĞI ---
+        let secilenKategori = category;
+        if (!category || category === 'Rastgele') {
+            const kategoriler = Object.keys(dictionary);
+            secilenKategori = kategoriler[Math.floor(Math.random() * kategoriler.length)];
         }
 
-        const randomIndex = Math.floor(Math.random() * players.length);
-        const impostorName = players[randomIndex];
+        const kategoriKelimeleri = dictionary[secilenKategori];
+        if (!kategoriKelimeleri || kategoriKelimeleri.length < 2) {
+            return res.status(500).json({ error: "Seçilen kategoride yeterli kelime bulunamadı kanka!" });
+        }
+
+        // Köylüler için kelime seçimi
+        const randomIndex1 = Math.floor(Math.random() * kategoriKelimeleri.length);
+        const selectedWord = kategoriKelimeleri[randomIndex1];
+
+        // "Yakin Kelime" modu seçildiyse imposter(lar) için aynı kategoriden farklı kelime seçiyoruz
+        let impostorWord = "Kelime Yok";
+        if (gameMode === 'Yakin Kelime') {
+            const kalanKelimeler = kategoriKelimeleri.filter(w => w !== selectedWord);
+            const randomIndex2 = Math.floor(Math.random() * kalanKelimeler.length);
+            impostorWord = kalanKelimeler[randomIndex2];
+        }
+
+        // --- B. ÇOKLU İMPOSTOR SEÇME MANTIĞI ---
+        const hedefImpostorSayisi = Math.min(impostorCount || 1, players.length - 1);
+        
+        // Fisher-Yates Karıştırma Algoritması ile oyuncu listesini rastgele karma
+        let karistirilmisOyuncular = [...players];
+        for (let i = karistirilmisOyuncular.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [karistirilmisOyuncular[i], karistirilmisOyuncular[j]] = [karistirilmisOyuncular[j], karistirilmisOyuncular[i]];
+        }
+
+        // Karıştırılmış listeden ilk N kişiyi İmpostor array'ine dolduruyoruz kanka 😈
+        const chosenImpostors = karistirilmisOyuncular.slice(0, hedefImpostorSayisi);
 
         console.log(`🎮 Oda [${roomCode}] için Oyun Başladı!`);
-        console.log(`🎯 Seçilen Kelime: ${selectedWord} | 😈 Imposter: ${impostorName}`);
+        console.log(`📂 Kategori: ${secilenKategori} | Mod: ${gameMode}`);
+        console.log(`🎯 Köylü Kelimesi: ${selectedWord} | 😈 İmpostorlar: ${chosenImpostors.join(', ')} (${impostorWord})`);
 
-        // Veri tutarlılığı için bilgileri Redis Hash yapısında güncelliyoruz kanka
+        // --- C. REDIS GÜNCELLEMESİ ---
         await redisClient.hset(`room:${roomCode}`, 'status', 'started');
         await redisClient.hset(`room:${roomCode}`, 'secretWord', selectedWord);
-        await redisClient.hset(`room:${roomCode}`, 'impostor', impostorName);
+        await redisClient.hset(`room:${roomCode}`, 'impostor', JSON.stringify(chosenImpostors)); // Array olarak yazıyoruz kanka
+        await redisClient.hset(`room:${roomCode}`, 'impostorWord', impostorWord);
 
-        // Hem Hash'e yazıyoruz hem de arkadaşının eski kod mantığı (String) kırılmasın diye yedek olarak set ediyoruz
+        // Eski kod uyumluluğunu sağlayan string kaydını da güncelleyelim kanka
         const roomDataString = {
             status: "started",
             secretWord: selectedWord,
-            impostor: impostorName
+            impostor: chosenImpostors,
+            impostorWord: impostorWord
         };
         await redisClient.set(`room:string:${roomCode}`, JSON.stringify(roomDataString));
 
-        // 🔥 WebSocket üzerinden odadaki herkese anlık sinyal gönderiyoruz kanka
-        io.to(roomCode).emit('game_started', {
-            status: "started",
-            secretWord: selectedWord,
-            impostor: impostorName
-        });
+        // 🔥 WebSocket üzerinden odadaki herkese anlık tüm bilgileri paslıyoruz
+        io.to(roomCode).emit('game_started', roomDataString);
 
         return res.json({
             status: "success",
             secretWord: selectedWord,
-            impostor: impostorName
+            impostor: chosenImpostors,
+            impostorWord: impostorWord
         });
 
     } catch (error) {
         console.error("Oyun başlatılırken hata oluştu:", error);
-        return res.status(500).json({ error: "Sunucu hatası" });
+        return res.status(500).json({ error: "Sunucu hatası kanka" });
     }
 });
 
@@ -190,22 +200,18 @@ app.get('/api/game-status/:roomCode', async (req, res) => {
     try {
         const { roomCode } = req.params;
 
-        // Önce Hash yapısından verileri çekelim kanka
         let roomData = await redisClient.hgetall(`room:${roomCode}`);
 
-        // Eğer Hash yapısı boşsa, arkadaşının yazdığı düz string kaydına baksın ki uyumluluk bozulmasın
         if (!roomData || Object.keys(roomData).length === 0) {
             const rawData = await redisClient.get(`room:string:${roomCode}`);
             if (!rawData) {
                 return res.json({ status: "waiting" });
             }
-            roomData = JSON.parse(rawData);
-            return res.json(roomData);
+            return res.json(JSON.parse(rawData));
         }
 
-        if (roomData.players) {
-            roomData.players = JSON.parse(roomData.players);
-        }
+        if (roomData.players) roomData.players = JSON.parse(roomData.players);
+        if (roomData.impostor) roomData.impostor = JSON.parse(roomData.impostor);
 
         return res.json(roomData); 
 
