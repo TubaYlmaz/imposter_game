@@ -34,11 +34,10 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-<<<<<<< HEAD
+  
+  # Hem senin HTTP API isteklerin hem de anlık WebSocket lobi yapınız için paketleri birleştirdik kanka 🚀
   http: ^1.6.0
-=======
   socket_io_client: ^3.1.6
->>>>>>> 88640956d960a688e782bad9013d2a61d98a19a0
 
 dev_dependencies:
   flutter_test:
