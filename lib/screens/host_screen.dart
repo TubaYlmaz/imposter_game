@@ -7,21 +7,30 @@ import 'package:http/http.dart' as http;
 import 'game_screen.dart';
 
 class HostScreen extends StatefulWidget {
-  const HostScreen({super.key});
+  final String gameMode;
+  final String category;
+  final int impostorCount;
+
+  const HostScreen({
+    super.key,
+    required this.gameMode,
+    required this.category,
+    required this.impostorCount,
+  });
 
   @override
   State<HostScreen> createState() => _HostScreenState();
 }
 
 class _HostScreenState extends State<HostScreen> {
-  // Şimdilik test amaçlı yazdığımız öğrenci listesi
+  // Şimdilik test amaçlı yazdığımız öğrenci listesi kanka
   final List<String> joinedPlayers = ['Ceyda', 'Ahmet', 'Ayşe', 'Mehmet'];
 
   // =========================================================================
-  // 🛠️ YENİ EKLENEN YER (1/3): ALGORİTMA DOĞRULAMA DEĞİŞKENLERİ
+  // ⚙️ GÜNCELLENEN ALGORİTMA DOĞRULAMA DEĞİŞKENLERİ (Çoklu İmpostor Destekli)
   // =========================================================================
   String? debugSecretWord;
-  String? debugImpostorName;
+  List<String> debugImpostorNames = []; // Tekil String yerine Liste yaptık kanka!
   Map<String, String> debugDistribution = {};
   // =========================================================================
 
@@ -47,7 +56,6 @@ class _HostScreenState extends State<HostScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Giriş ekranıyla birebir aynı mor-lacivert neon gradyan arka plan
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -64,7 +72,7 @@ class _HostScreenState extends State<HostScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ÜST KISIM: Oda Kodu Bilgisi (Sizin Panele Uygun)
+                // ÜST KISIM: Oda Kodu Bilgisi
                 Card(
                   color: const Color(0xFF181832).withOpacity(0.9),
                   shape: RoundedRectangleBorder(
@@ -91,9 +99,7 @@ class _HostScreenState extends State<HostScreen> {
                         Text(
                           roomCode,
                           style: const TextStyle(
-                            color: Color(
-                              0xFF00D2FF,
-                            ), // Orijinal turkuaz neon kod renginiz
+                            color: Color(0xFF00D2FF), // Orijinal turkuaz neon renginiz
                             fontSize: 38,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 5,
@@ -174,7 +180,7 @@ class _HostScreenState extends State<HostScreen> {
                                 trailing: const Icon(
                                   Icons.check_circle,
                                   color: Color(0xFF00D2FF),
-                                ), // Turkuaz onay
+                                ),
                               ),
                             );
                           },
@@ -187,19 +193,19 @@ class _HostScreenState extends State<HostScreen> {
                   onPressed: () async {
                     if (joinedPlayers.isEmpty) return;
 
-                    // Web testleri için localhost yerine 127.0.0.1 kullanımı daha kararlıdır.
-                    final url = Uri.parse(
-                      'http://127.0.0.1:3000/api/start-game',
-                    );
+                    final url = Uri.parse('http://127.0.0.1:3000/api/start-game');
 
                     try {
-                      // 1. Backend'e oda kodunu ve oyuncu listesini gönderiyoruz
+                      // 1. Login ekranından constructor ile aldığımız tüm ayarları paketleyip backend'e fırlatıyoruz kanka 🚀
                       final response = await http.post(
                         url,
                         headers: {'Content-Type': 'application/json'},
                         body: jsonEncode({
                           'roomCode': roomCode,
                           'players': joinedPlayers,
+                          'gameMode': widget.gameMode,
+                          'category': widget.category,
+                          'impostorCount': widget.impostorCount,
                         }),
                       );
 
@@ -207,47 +213,49 @@ class _HostScreenState extends State<HostScreen> {
                         final data = jsonDecode(response.body);
 
                         String secretWord = data['secretWord'];
-                        String impostor = data['impostor'];
+                        
+                        // Backend'den gelen array yapısını güvenli listeye döküyoruz
+                        var impostorData = data['impostor']; 
+                        List<String> impostors = [];
+                        
+                        if (impostorData is List) {
+                          impostors = impostorData.map((e) => e.toString()).toList();
+                        } else {
+                          impostors = [impostorData.toString()];
+                        }
 
-                        // =========================================================================
-                        // 🛠️ YENİ EKLENEN YER (2/3): DOĞRULAMA PANELİNE VERİLERİ AKTARMA
-                        // =========================================================================
                         setState(() {
                           debugSecretWord = secretWord;
-                          debugImpostorName = impostor;
+                          debugImpostorNames = impostors; // Sorun çıkaran liste artık eşitlendi kanka!
 
                           debugDistribution.clear();
                           for (var player in joinedPlayers) {
-                            if (player == debugImpostorName) {
-                              debugDistribution[player] =
-                                  "😈 IMPOSTER (Kelime Yok)";
+                            if (debugImpostorNames.contains(player)) {
+                              String impWord = data['impostorWord'] ?? "Kelime Yok";
+                              debugDistribution[player] = "😈 IMPOSTER ($impWord)";
                             } else {
-                              debugDistribution[player] =
-                                  "🧑‍🌾 Köylü (Kelime: $debugSecretWord)";
+                              debugDistribution[player] = "🧑‍🌾 Köylü (Kelime: $debugSecretWord)";
                             }
                           }
                         });
-                        // =========================================================================
 
-                        // 2. Test amaçlı Host ekranında kendimizi listenin ilk elemanı sayalım
+                        // Test için ilk oyuncunun ekran geçiş durumu
                         String currentTestPlayer = joinedPlayers[0];
-                        bool isMeImpostor = (currentTestPlayer == impostor);
+                        bool isMeImpostor = debugImpostorNames.contains(currentTestPlayer);
 
-                        // 3. backend'den gelen gerçek kelime ve rol ile yeni ekranı açıyoruz
                         if (!mounted) return;
 
-                        // NOT: Eğer Host olarak sadece izleyici kalıp paneli takip etmek istersen,
-                        // aşağıdaki Navigator bloğunu yorum satırına alabilirsin.
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => GameScreen(
                               playerName: currentTestPlayer,
-                              secretWord: secretWord,
+                              secretWord: isMeImpostor ? (data['impostorWord'] ?? '') : secretWord,
                               isImpostor: isMeImpostor,
                             ),
                           ),
                         );
+
                       } else {
                         debugPrint("Sunucu hatası: ${response.body}");
                       }
@@ -256,7 +264,7 @@ class _HostScreenState extends State<HostScreen> {
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00D2FF), // Turkuaz buton
+                    backgroundColor: const Color(0xFF00D2FF), // Turkuaz buton renginiz
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -274,9 +282,9 @@ class _HostScreenState extends State<HostScreen> {
                 ),
 
                 // =========================================================================
-                // 🛠️ YENİ EKLENEN YER (3/3): CANLI KONTROL PANELİ WIDGET'I
+                // 🛠️ YENİ HALE GETİRİLEN: ÇOKLU CANLI KONTROL PANELİ WIDGET'I 🚀
                 // =========================================================================
-                if (debugImpostorName != null) ...[
+                if (debugImpostorNames.isNotEmpty) ...[
                   const SizedBox(height: 15),
                   Container(
                     padding: const EdgeInsets.all(15),
@@ -293,11 +301,7 @@ class _HostScreenState extends State<HostScreen> {
                       children: [
                         const Row(
                           children: [
-                            Icon(
-                              Icons.bug_report,
-                              color: Color(0xFF00D2FF),
-                              size: 20,
-                            ),
+                            Icon(Icons.bug_report, color: Color(0xFF00D2FF), size: 20),
                             SizedBox(width: 8),
                             Text(
                               "HOST ALGORİTMA DOĞRULAMA PANELİ",
@@ -312,13 +316,11 @@ class _HostScreenState extends State<HostScreen> {
                         const Divider(color: Colors.white24),
                         Text(
                           "🎯 Seçilen Kelime: $debugSecretWord",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                          ),
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
                         ),
+                        // Tüm seçilen imposter'ları yan yana virgülle yazdırıyoruz kanka kanka
                         Text(
-                          "😈 Seçilen Imposter: $debugImpostorName",
+                          "😈 Seçilen Imposter(lar): ${debugImpostorNames.join(', ')}",
                           style: const TextStyle(
                             color: Colors.redAccent,
                             fontWeight: FontWeight.bold,
@@ -336,7 +338,7 @@ class _HostScreenState extends State<HostScreen> {
                         ),
                         const SizedBox(height: 5),
                         ...debugDistribution.entries.map((entry) {
-                          bool isImpostor = entry.key == debugImpostorName;
+                          bool isImpostor = debugImpostorNames.contains(entry.key);
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 2.0),
                             child: Row(
@@ -344,17 +346,12 @@ class _HostScreenState extends State<HostScreen> {
                               children: [
                                 Text(
                                   entry.key,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                  ),
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
                                 ),
                                 Text(
                                   entry.value,
                                   style: TextStyle(
-                                    color: isImpostor
-                                        ? Colors.redAccent
-                                        : Colors.greenAccent,
+                                    color: isImpostor ? Colors.redAccent : Colors.greenAccent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
