@@ -3,13 +3,16 @@ const http = require('http');
 const Redis = require('ioredis');
 const fs = require('fs');
 const readline = require('readline'); // .txt dosyasını satır satır okumak için yerleşik modül
+const { Server } = require('socket.io'); // Canlı bağlantılar için Socket.io
+const cors = require('cors'); // 👈 İşte o meşhur paketimiz burada!
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors()); // Flutter Web ve Mobil ağ istekleri için CORS aktif
+app.use(express.json()); // HTTP POST isteklerindeki JSON gövdelerini okuyabilmek için
+
 const server = http.createServer(app);
 
-// Flutter web veya mobil ağ uyarısı vermesin diye CORS ayarlarını açıyoruz kanka
+// WebSocket için CORS ayarları
 const io = new Server(server, {
     cors: {
         origin: "*",
@@ -28,11 +31,11 @@ redisClient.on('error', (err) => {
     console.log('Redis Hatası:', err);
 });
 
-// Kelime havuzunu yükleyen o güzel fonksiyonun (Aynen korundu kanka)
+// Kelime havuzunu yükleyen fonksiyon
 function kelimeleriYukle() {
     const kelimeHavuzu = [];
 
-    // '../dictionary.txt' diyerek bir üst klasördeki (imposter_game içindeki) dosyaya erişiyoruz
+    // '../dictionary.txt' diyerek bir üst klasördeki dosyaya erişiyoruz
     const rl = readline.createInterface({
         input: fs.createReadStream('../dictionary.txt'),
         output: process.stdout,
@@ -73,22 +76,19 @@ io.on('connection', (socket) => {
     socket.on('create_room', async (data) => {
         const { roomCode, hostName } = data;
 
-        // Oda verisini Redis'te saklamak için bir obje hazırlıyoruz
         const roomData = {
             host: hostName,
             status: 'waiting',
-            players: JSON.stringify([hostName]) // Hostu da ilk oyuncu olarak ekledik kanka
+            players: JSON.stringify([hostName])
         };
 
-        // Redis'e oda verisini 2 saatlik ömürle (TTL) yazıyoruz ki şişme yapmasın
+        // Redis'e oda verisini 2 saatlik ömürle (TTL) yazıyoruz
         await redisClient.hmset(`room:${roomCode}`, roomData);
         await redisClient.expire(`room:${roomCode}`, 7200);
 
-        // Soketi bu odaya özel odaya (odalar arası chat odası gibi düşün) sokuyoruz
         socket.join(roomCode);
         console.log(`🏠 Oda Oluşturuldu: ${roomCode} | Host: ${hostName}`);
 
-        // Başarılı sinyalini hosta geri dönüyoruz
         socket.emit('room_created', { success: true, roomCode });
     });
 
@@ -96,7 +96,6 @@ io.on('connection', (socket) => {
     socket.on('join_room', async (data) => {
         const { roomCode, playerName } = data;
 
-        // Redis'te bu oda kodu var mı kontrol et
         const roomExists = await redisClient.exists(`room:${roomCode}`);
 
         if (!roomExists) {
@@ -104,25 +103,19 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Redis'ten oda verisini çek
         const currentRoom = await redisClient.hgetall(`room:${roomCode}`);
         let players = JSON.parse(currentRoom.players || '[]');
 
-        // Oyuncu zaten odadaysa tekrar ekleme kanka
-        if (!players.contains ? players.includes(playerName) : false) {
-            // Opsiyonel: isim çakışması kontrolü
-        } else {
+        if (!players.includes(playerName)) {
             players.push(playerName);
         }
 
-        // Güncel oyuncu listesini Redis'e geri yaz
         await redisClient.hset(`room:${roomCode}`, 'players', JSON.stringify(players));
 
-        // Soketi odaya dahil et
         socket.join(roomCode);
         console.log(`🏃‍♂️ ${playerName}, ${roomCode} odasına katıldı.`);
 
-        // 💥 EN KRİTİK YER: Odadaki HERKESE (Host + Tüm Oyuncular) güncel oyuncu listesini fırlatıyoruz!
+        // Odadaki HERKESE güncel oyuncu listesini fırlatıyoruz!
         io.to(roomCode).emit('room_updated', {
             roomCode,
             players: players,
@@ -130,13 +123,14 @@ io.on('connection', (socket) => {
         });
     });
 
-    // ➡️ 3. BAĞLANTI KOPTIĞINDA (Kullanıcı sekmeyi kapattığında vs.)
     socket.on('disconnect', () => {
         console.log(`❌ Kullanıcı ayrıldı: ${socket.id}`);
     });
 });
 
-// --- API ENDPOINT'LERİ ---
+// ==========================================
+// 🏁 --- API ENDPOINT'LERİ ---
+// ==========================================
 
 // 🏁 1. Host'un Oyunu Başlatma İstetiği
 app.post('/api/start-game', async (req, res) => {
@@ -147,29 +141,37 @@ app.post('/api/start-game', async (req, res) => {
             return res.status(400).json({ error: "Odadaki oyuncu listesi boş olamaz!" });
         }
 
-        // Redis havuzundan rastgele 1 kelime çekiyoruz
         const selectedWord = await redisClient.srandmember('kelime_havuzu');
 
         if (!selectedWord) {
             return res.status(500).json({ error: "Redis kelime havuzu boş!" });
         }
 
-        // Oyuncuların içinden rastgele bir Imposter seçiyoruz
         const randomIndex = Math.floor(Math.random() * players.length);
         const impostorName = players[randomIndex];
 
         console.log(`🎮 Oda [${roomCode}] için Oyun Başladı!`);
         console.log(`🎯 Seçilen Kelime: ${selectedWord} | 😈 Imposter: ${impostorName}`);
 
-        // 💾 ODA BİLGİLERİNİ REDIS'E KAYDETME (Oyuncuların okuyabilmesi için)
-        const roomData = {
+        // Veri tutarlılığı için bilgileri Redis Hash yapısında güncelliyoruz kanka
+        await redisClient.hset(`room:${roomCode}`, 'status', 'started');
+        await redisClient.hset(`room:${roomCode}`, 'secretWord', selectedWord);
+        await redisClient.hset(`room:${roomCode}`, 'impostor', impostorName);
+
+        // Hem Hash'e yazıyoruz hem de arkadaşının eski kod mantığı (String) kırılmasın diye yedek olarak set ediyoruz
+        const roomDataString = {
             status: "started",
             secretWord: selectedWord,
             impostor: impostorName
         };
+        await redisClient.set(`room:string:${roomCode}`, JSON.stringify(roomDataString));
 
-        // Bilgileri JSON string formatında Redis'e kaydediyoruz. Oda kodu anahtar olarak kullanılıyor.
-        await redisClient.set(`room:${roomCode}`, JSON.stringify(roomData));
+        // 🔥 WebSocket üzerinden odadaki herkese anlık sinyal gönderiyoruz kanka
+        io.to(roomCode).emit('game_started', {
+            status: "started",
+            secretWord: selectedWord,
+            impostor: impostorName
+        });
 
         return res.json({
             status: "success",
@@ -183,21 +185,29 @@ app.post('/api/start-game', async (req, res) => {
     }
 });
 
-// 📡 2. Oyuncuların Oda Durumunu Sorgulama İstetiği (YENİ EKLENDİ)
+// 📡 2. Oyuncuların Oda Durumunu Sorgulama İstetiği
 app.get('/api/game-status/:roomCode', async (req, res) => {
     try {
         const { roomCode } = req.params;
 
-        // Redis'ten odaya ait verileri çekiyoruz
-        const rawData = await redisClient.get(`room:${roomCode}`);
+        // Önce Hash yapısından verileri çekelim kanka
+        let roomData = await redisClient.hgetall(`room:${roomCode}`);
 
-        if (!rawData) {
-            // Oda henüz oluşturulmamış veya oyun başlamamışsa bekleme statüsü döner
-            return res.json({ status: "waiting" });
+        // Eğer Hash yapısı boşsa, arkadaşının yazdığı düz string kaydına baksın ki uyumluluk bozulmasın
+        if (!roomData || Object.keys(roomData).length === 0) {
+            const rawData = await redisClient.get(`room:string:${roomCode}`);
+            if (!rawData) {
+                return res.json({ status: "waiting" });
+            }
+            roomData = JSON.parse(rawData);
+            return res.json(roomData);
         }
 
-        const roomData = JSON.parse(rawData);
-        return res.json(roomData); // { status: "started", secretWord: "...", impostor: "..." }
+        if (roomData.players) {
+            roomData.players = JSON.parse(roomData.players);
+        }
+
+        return res.json(roomData); 
 
     } catch (error) {
         console.error("Oda durumu kontrol edilirken hata oluştu:", error);
