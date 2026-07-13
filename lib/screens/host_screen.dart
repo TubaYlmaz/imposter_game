@@ -1,7 +1,10 @@
 // lib/screens/host_screen.dart
 
 import 'package:flutter/material.dart';
-import 'dart:math'; 
+import 'dart:math';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'game_screen.dart';
 
 class HostScreen extends StatefulWidget {
   const HostScreen({super.key});
@@ -12,12 +15,15 @@ class HostScreen extends StatefulWidget {
 
 class _HostScreenState extends State<HostScreen> {
   // Şimdilik test amaçlı yazdığımız öğrenci listesi
-  final List<String> joinedPlayers = [
-    'Ceyda',
-    'Ahmet',
-    'Ayşe',
-    'Mehmet',
-  ];
+  final List<String> joinedPlayers = ['Ceyda', 'Ahmet', 'Ayşe', 'Mehmet'];
+
+  // =========================================================================
+  // 🛠️ YENİ EKLENEN YER (1/3): ALGORİTMA DOĞRULAMA DEĞİŞKENLERİ
+  // =========================================================================
+  String? debugSecretWord;
+  String? debugImpostorName;
+  Map<String, String> debugDistribution = {};
+  // =========================================================================
 
   late String roomCode;
 
@@ -30,9 +36,12 @@ class _HostScreenState extends State<HostScreen> {
 
   // 6 Haneli Rastgele Kod Üreten Fonksiyon
   String _generateRandomRoomCode() {
-    const chars = 'ABCDEFGHJKLMNOPQRSTUVWXYZ23456789'; 
+    const chars = 'ABCDEFGHJKLMNOPQRSTUVWXYZ23456789';
     Random random = Random();
-    return List.generate(6, (index) => chars[random.nextInt(chars.length)]).join();
+    return List.generate(
+      6,
+      (index) => chars[random.nextInt(chars.length)],
+    ).join();
   }
 
   @override
@@ -46,11 +55,7 @@ class _HostScreenState extends State<HostScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF1E1E38),
-              Color(0xFF13132B),
-              Color(0xFF0B0B1A),
-            ],
+            colors: [Color(0xFF1E1E38), Color(0xFF13132B), Color(0xFF0B0B1A)],
           ),
         ),
         child: SafeArea(
@@ -64,7 +69,10 @@ class _HostScreenState extends State<HostScreen> {
                   color: const Color(0xFF181832).withOpacity(0.9),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(15),
-                    side: const BorderSide(color: Color(0xFF2E2E5C), width: 1.5),
+                    side: const BorderSide(
+                      color: Color(0xFF2E2E5C),
+                      width: 1.5,
+                    ),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
@@ -72,13 +80,20 @@ class _HostScreenState extends State<HostScreen> {
                       children: [
                         const Text(
                           'ÖĞRENCİLER İÇİN ODA KODU',
-                          style: TextStyle(color: Color(0xFF8E8EAF), fontSize: 13, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Color(0xFF8E8EAF),
+                            fontSize: 13,
+                            letterSpacing: 1.5,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Text(
                           roomCode,
                           style: const TextStyle(
-                            color: Color(0xFF00D2FF), // Orijinal turkuaz neon kod renginiz
+                            color: Color(
+                              0xFF00D2FF,
+                            ), // Orijinal turkuaz neon kod renginiz
                             fontSize: 38,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 5,
@@ -96,13 +111,23 @@ class _HostScreenState extends State<HostScreen> {
                   children: [
                     const Text(
                       'Katılan Oyuncular',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Chip(
                       label: Text('${joinedPlayers.length} Oyuncu'),
                       backgroundColor: const Color(0xFF2E2E5C),
-                      side: const BorderSide(color: Color(0xFF00D2FF), width: 1),
-                      labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      side: const BorderSide(
+                        color: Color(0xFF00D2FF),
+                        width: 1,
+                      ),
+                      labelStyle: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -114,7 +139,10 @@ class _HostScreenState extends State<HostScreen> {
                       ? const Center(
                           child: Text(
                             'Oyuncuların gelmesi bekleniyor...',
-                            style: TextStyle(color: Color(0xFF8E8EAF), fontSize: 16),
+                            style: TextStyle(
+                              color: Color(0xFF8E8EAF),
+                              fontSize: 16,
+                            ),
                           ),
                         )
                       : ListView.builder(
@@ -125,15 +153,28 @@ class _HostScreenState extends State<HostScreen> {
                               margin: const EdgeInsets.symmetric(vertical: 6),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                side: const BorderSide(color: Color(0xFF2E2E5C), width: 1),
+                                side: const BorderSide(
+                                  color: Color(0xFF2E2E5C),
+                                  width: 1,
+                                ),
                               ),
                               child: ListTile(
-                                leading: const Icon(Icons.person, color: Color(0xFF8E8EAF)),
+                                leading: const Icon(
+                                  Icons.person,
+                                  color: Color(0xFF8E8EAF),
+                                ),
                                 title: Text(
                                   joinedPlayers[index],
-                                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                                trailing: const Icon(Icons.check_circle, color: Color(0xFF00D2FF)), // Turkuaz onay
+                                trailing: const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF00D2FF),
+                                ), // Turkuaz onay
                               ),
                             );
                           },
@@ -143,19 +184,190 @@ class _HostScreenState extends State<HostScreen> {
 
                 // EN ALT KISIM: Oyunu Başlatma Butonu
                 ElevatedButton(
-                  onPressed: () {
-                    debugPrint("Oyunu Başlat butonuna basıldı! Üretilen Kod: $roomCode");
+                  onPressed: () async {
+                    if (joinedPlayers.isEmpty) return;
+
+                    // Web testleri için localhost yerine 127.0.0.1 kullanımı daha kararlıdır.
+                    final url = Uri.parse(
+                      'http://127.0.0.1:3000/api/start-game',
+                    );
+
+                    try {
+                      // 1. Backend'e oda kodunu ve oyuncu listesini gönderiyoruz
+                      final response = await http.post(
+                        url,
+                        headers: {'Content-Type': 'application/json'},
+                        body: jsonEncode({
+                          'roomCode': roomCode,
+                          'players': joinedPlayers,
+                        }),
+                      );
+
+                      if (response.statusCode == 200) {
+                        final data = jsonDecode(response.body);
+
+                        String secretWord = data['secretWord'];
+                        String impostor = data['impostor'];
+
+                        // =========================================================================
+                        // 🛠️ YENİ EKLENEN YER (2/3): DOĞRULAMA PANELİNE VERİLERİ AKTARMA
+                        // =========================================================================
+                        setState(() {
+                          debugSecretWord = secretWord;
+                          debugImpostorName = impostor;
+
+                          debugDistribution.clear();
+                          for (var player in joinedPlayers) {
+                            if (player == debugImpostorName) {
+                              debugDistribution[player] =
+                                  "😈 IMPOSTER (Kelime Yok)";
+                            } else {
+                              debugDistribution[player] =
+                                  "🧑‍🌾 Köylü (Kelime: $debugSecretWord)";
+                            }
+                          }
+                        });
+                        // =========================================================================
+
+                        // 2. Test amaçlı Host ekranında kendimizi listenin ilk elemanı sayalım
+                        String currentTestPlayer = joinedPlayers[0];
+                        bool isMeImpostor = (currentTestPlayer == impostor);
+
+                        // 3. backend'den gelen gerçek kelime ve rol ile yeni ekranı açıyoruz
+                        if (!mounted) return;
+
+                        // NOT: Eğer Host olarak sadece izleyici kalıp paneli takip etmek istersen,
+                        // aşağıdaki Navigator bloğunu yorum satırına alabilirsin.
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => GameScreen(
+                              playerName: currentTestPlayer,
+                              secretWord: secretWord,
+                              isImpostor: isMeImpostor,
+                            ),
+                          ),
+                        );
+                      } else {
+                        debugPrint("Sunucu hatası: ${response.body}");
+                      }
+                    } catch (e) {
+                      debugPrint("Bağlantı hatası: $e");
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00D2FF), // Turkuaz buton
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Text(
                     'OYUNU BAŞLAT',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0B0B1A), letterSpacing: 1),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0B0B1A),
+                      letterSpacing: 1,
+                    ),
                   ),
                 ),
+
+                // =========================================================================
+                // 🛠️ YENİ EKLENEN YER (3/3): CANLI KONTROL PANELİ WIDGET'I
+                // =========================================================================
+                if (debugImpostorName != null) ...[
+                  const SizedBox(height: 15),
+                  Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1C1C3A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFF00D2FF),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.bug_report,
+                              color: Color(0xFF00D2FF),
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              "HOST ALGORİTMA DOĞRULAMA PANELİ",
+                              style: TextStyle(
+                                color: Color(0xFF00D2FF),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(color: Colors.white24),
+                        Text(
+                          "🎯 Seçilen Kelime: $debugSecretWord",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          "😈 Seçilen Imposter: $debugImpostorName",
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          "📊 Oyuncu Rol Dağılım Listesi:",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        ...debugDistribution.entries.map((entry) {
+                          bool isImpostor = entry.key == debugImpostorName;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  entry.key,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Text(
+                                  entry.value,
+                                  style: TextStyle(
+                                    color: isImpostor
+                                        ? Colors.redAccent
+                                        : Colors.greenAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+                // =========================================================================
               ],
             ),
           ),
@@ -163,4 +375,4 @@ class _HostScreenState extends State<HostScreen> {
       ),
     );
   }
-} // Sınıfı kapatan parantez burası kanka, az önce uçmuştu
+}
