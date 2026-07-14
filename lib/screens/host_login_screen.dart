@@ -2,7 +2,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // dictionary.json okumak için eklendi kanka
+import 'package:flutter/services.dart'; // Rakam sınırlaması ve JSON okumak için kanka
 import 'host_screen.dart';
 import 'player_screen.dart'; 
 
@@ -20,11 +20,13 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
   final TextEditingController _roomCodeController = TextEditingController();
 
   // =========================================================================
-  // ⚙️ YENİ EKLENEN YER: HOST AYAR DEĞİŞKENLERİ
+  // ⚙️ GÜNCELLENEN YER: HOST AYAR DEĞİŞKENLERİ VE CONTROLLER
   // =========================================================================
   String _selectedMod = 'Klasik';
   String _selectedCategory = 'Rastgele';
-  int _selectedImpostorCount = 1;
+  
+  // İmpostor sayısını klavyeden elle almak için text controller ekledik kanka
+  final TextEditingController _impostorCountController = TextEditingController(text: '1');
 
   final List<String> _oyunModlari = ['Klasik', 'Yakin Kelime'];
   List<String> _kategoriler = ['Rastgele']; 
@@ -60,6 +62,7 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
     _hostNameController.dispose();
     _playerNameController.dispose();
     _roomCodeController.dispose();
+    _impostorCountController.dispose(); // Bellek sızıntısı yapmasın diye dispose ediyoruz kanka
     super.dispose();
   }
 
@@ -131,7 +134,6 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
                           )
                         : IntrinsicHeight(
                             child: SizedBox(
-                              // Dropdownlar gelince sığması için yüksekliği otomatik veya daha esnek bıraktık kanka
                               width: double.infinity,
                               child: AnimatedBuilder(
                                 animation: _tabController,
@@ -158,7 +160,7 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
     );
   }
 
-  // 1. Sekme: ODA KURMA FORMU (YENİ SEÇENEKLERLE BERABER 🚀)
+  // 1. Sekme: ODA KURMA FORMU 🚀
   Widget _buildHostForm() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -183,54 +185,183 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
             ),
             const SizedBox(height: 16),
 
-            // 1. Oyun Modu Seçimi Dropdown
-            DropdownButtonFormField<String>(
-              value: _selectedMod,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Oyun Modu',
-                labelStyle: const TextStyle(color: Colors.grey),
-                filled: true,
-                fillColor: const Color(0xFF1A1A2E),
-                enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white10), borderRadius: BorderRadius.circular(12)),
-                focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.redAccent, width: 2), borderRadius: BorderRadius.circular(12)),
+            // OYUN MODU SEÇİM KARTLARI 🚀
+            // =========================================================================
+            const Text(
+              'Oyun Modu Seçiniz',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
-              items: _oyunModlari.map((mod) => DropdownMenuItem(value: mod, child: Text(mod == 'Klasik' ? 'Klasik (İmpostor Kelimeyi Görmez)' : 'Yakın Kelime (Farklı Kelime)'))).toList(),
-              onChanged: (val) => setState(() => _selectedMod = val!),
+            ),
+            const SizedBox(height: 10),
+            
+            // 🛡️ RepaintBoundary ile kartların sınırını çizdik, ekranın kalanı artık titremiyor!
+            RepaintBoundary(
+              child: Row(
+                children: [
+                  // 1. Kart: Klasik Mod
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedMod = 'Klasik';
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150), // Daha seri ve akıcı geçiş kanka
+                        curve: Curves.easeInOut, // Yumuşak ivmelenme eğrisi
+                        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8), // İstediğin gibi dolgun yükseklik
+                        decoration: BoxDecoration(
+                          color: _selectedMod == 'Klasik'
+                              ? const Color(0xFF1A1A2E)
+                              : const Color(0xFF101026),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _selectedMod == 'Klasik'
+                                ? Colors.redAccent
+                                : Colors.white10,
+                            width: _selectedMod == 'Klasik' ? 2 : 1,
+                          ),
+                          boxShadow: _selectedMod == 'Klasik'
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.redAccent.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  )
+                                ]
+                              : [],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.visibility_off_rounded,
+                              color: _selectedMod == 'Klasik'
+                                  ? Colors.redAccent
+                                  : Colors.grey,
+                              size: 28,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Klasik',
+                              style: TextStyle(
+                                color: _selectedMod == 'Klasik'
+                                    ? Colors.white
+                                    : Colors.grey,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16, // Büyüttüğümüz yeni font boyutu
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'İmpostor kelimeyi görmez',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: _selectedMod == 'Klasik'
+                                    ? Colors.white70
+                                    : Colors.grey,
+                                fontSize: 12, // Büyüttüğümüz açıklama font boyutu
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // 2. Kart: Yakın Kelime Modu
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedMod = 'Yakin Kelime';
+                        });
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeInOut,
+                        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: _selectedMod == 'Yakin Kelime'
+                              ? const Color(0xFF1A1A2E)
+                              : const Color(0xFF101026),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _selectedMod == 'Yakin Kelime'
+                                ? Colors.redAccent
+                                : Colors.white10,
+                            width: _selectedMod == 'Yakin Kelime' ? 2 : 1,
+                          ),
+                          boxShadow: _selectedMod == 'Yakin Kelime'
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.redAccent.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  )
+                                ]
+                              : [],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.compare_arrows_rounded,
+                              color: _selectedMod == 'Yakin Kelime'
+                                  ? Colors.redAccent
+                                  : Colors.grey,
+                              size: 28,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Yakın Kelime',
+                              style: TextStyle(
+                                color: _selectedMod == 'Yakin Kelime'
+                                    ? Colors.white
+                                    : Colors.grey,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'İmpostor benzer kelime alır',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: _selectedMod == 'Yakin Kelime'
+                                    ? Colors.white70
+                                    : Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
 
-            // 2. Kategori Seçimi Dropdown (JSON'dan Dinamik Besleniyor kanka)
-            DropdownButtonFormField<String>(
-              value: _selectedCategory,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+            // 🛠️ 3. ARADIĞIN YER: İmpostor Sayısı Serbest Metin Giriş Alanı (Sadece Rakam Kabul Eder)
+            TextField(
+              controller: _impostorCountController,
+              keyboardType: TextInputType.number, // Sadece sayı klavyesini açar kanka
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly], // Harf yazmayı tamamen engeller
+              style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                labelText: 'Kelime Kategorisi',
-                labelStyle: const TextStyle(color: Colors.grey),
+                labelText: 'İmpostor Sayısı (Örn: 2, 5...)',
+                labelStyle: const TextStyle(color: Colors.grey, fontSize: 14),
                 filled: true,
                 fillColor: const Color(0xFF1A1A2E),
-                enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white10), borderRadius: BorderRadius.circular(12)),
-                focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.redAccent, width: 2), borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.redAccent, width: 2)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white10)),
               ),
-              items: _kategoriler.map((kat) => DropdownMenuItem(value: kat, child: Text(kat))).toList(),
-              onChanged: (val) => setState(() => _selectedCategory = val!),
-            ),
-            const SizedBox(height: 16),
-
-            // 3. İmpostor Sayısı Seçimi Dropdown
-            DropdownButtonFormField<int>(
-              value: _selectedImpostorCount,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'İmpostor Sayısı',
-                labelStyle: const TextStyle(color: Colors.grey),
-                filled: true,
-                fillColor: const Color(0xFF1A1A2E),
-                enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white10), borderRadius: BorderRadius.circular(12)),
-                focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.redAccent, width: 2), borderRadius: BorderRadius.circular(12)),
-              ),
-              items: [1, 2, 3].map((count) => DropdownMenuItem(value: count, child: Text('$count İmpostor'))).toList(),
-              onChanged: (val) => setState(() => _selectedImpostorCount = val!),
             ),
             const SizedBox(height: 24),
 
@@ -244,15 +375,20 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
                   return;
                 }
                 
-                // Seçilen ayarları bir sonraki ekrana paslıyoruz kanka
-                // host_login_screen.dart içindeki ODA OLUŞTUR butonunun onPressed içi:
+                // 🔮 Metinden Sayıya Dönüşüm Sihri:
+                // Yazılan yazıyı (Örn: '5') alıp int sayıya (5) dönüştürüyoruz kanka kanka. 
+                // Boş bırakılırsa veya hata olursa direkt 1 yapıyor patlamasın diye.
+                int parsedImpostorCount = int.tryParse(_impostorCountController.text.trim()) ?? 1;
+                if (parsedImpostorCount < 1) parsedImpostorCount = 1;
+
+                // Seçilen ve dönüştürülen ayarları bir sonraki ekrana paslıyoruz kanka
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => HostScreen(
                       gameMode: _selectedMod,
                       category: _selectedCategory,
-                      impostorCount: _selectedImpostorCount,
+                      impostorCount: parsedImpostorCount, // 👈 Dönüştürülmüş sayı gidiyor!
                     ),
                   ),
                 );
@@ -312,7 +448,7 @@ class _HostLoginScreenState extends State<HostLoginScreen> with SingleTickerProv
 
               if (pName.isEmpty || rCode.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Lütfen isim ve oda kodunu eksikosiz doldurun!')),
+                  const SnackBar(content: Text('Lütfen isim ve oda kodunu eksiksiz doldurun!')),
                 );
                 return;
               }
